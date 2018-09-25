@@ -16,7 +16,7 @@ class Menu(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Title")
+        self.setWindowTitle("Overview")
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)

@@ -14,10 +14,14 @@ from PyQt5.QtWidgets import QGraphicsRectItem
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QPen
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QMainWindow
+from PyQt5.QtWidgets import QVBoxLayout
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
 
+from aemsectionview import AEMSectionView
 
 class AEMOverview(QGraphicsScene):
     mouseMoved = pyqtSignal()
@@ -83,6 +87,24 @@ class AEMOverview(QGraphicsScene):
 
     def getView(self):
         return self.view
+
+    def mouseDoubleClickEvent(self, event):
+
+        if self.line>0:
+
+            self.annotator = AEMSectionView(self.line)
+            self.window = QMainWindow()
+            self.window.setWindowTitle("Line"+str(self.line))
+
+            central_widget = QWidget()
+            self.window.setCentralWidget(central_widget)
+            layout = QVBoxLayout(central_widget)
+
+            self.view = QGraphicsView(self.annotator)
+
+            layout.addWidget(self.view)
+
+            self.window.show()
 
     def mouseMoveEvent(self, event):
         super(AEMOverview, self).mouseMoveEvent(event)
