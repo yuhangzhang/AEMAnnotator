@@ -59,10 +59,8 @@ class AEMSectionData():
                     tmp2"""
 
 
-        # cmd = "select easting_albers, northing_albers, fiducial, conductivity[1], conductivity[2], conductivity[3]\
-        #     from (select easting_albers, northing_albers, fiducial, \
-        #     (regexp_split_to_array(regexp_replace(conductivity,e'[{}}]+','','g'),',')) as conductivity \
-        #     from geoannotator.aem_albers where line::bigint= " +str(line)+") as tmp"
+        cmd = "select easting_albers, northing_albers, elevation, conductivity, conductivity, conductivity\
+            from geoannotator.point_by_line where line='"+str(line)+"'"
 
         cur.execute(cmd)
         inputrecord = np.array(cur.fetchall())
@@ -96,9 +94,6 @@ class AEMSectionData():
         a = self.point[: ,-2].astype(float ) -float(self.point[0 ,-2])
         b = ( c** 2 - a**2 )**0.5
 
-        img = np.zeros([height, width, 3], dtype=float)
-        img.fill(200)
-
         maxa = a.max()
         mina = a.min()
         maxb = b.max()
@@ -109,6 +104,11 @@ class AEMSectionData():
         b = ( b - minb ) / (maxa -mina ) *(width -1)
         a = a.astype(int)
         b = b.astype(int)
+
+        height = b.max()+1
+
+        img = np.zeros([height, width, 3], dtype=float)
+        img.fill(200)
 
         for i in range(len(a)):
             img[b[i]:b[i ] +2 ,a[i]:a[i ] +2 ,: ] =[255 ,0 ,0]

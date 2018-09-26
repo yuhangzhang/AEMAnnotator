@@ -37,7 +37,7 @@ class AEMSectionView(QGraphicsScene):
         self.pixmapundergroundhandle = None
         self.pixmappredictionhandle = None
         self.line = line
-        self.loaddatabase(800,600)
+        self.loaddatabase(1000,400)
 
     def loaddatabase(self, width, height):
         self.geodata = AEMSectionData(self.line)

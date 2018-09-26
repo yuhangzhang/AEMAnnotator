@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QWidget
 from PyQt5.QtWidgets import QVBoxLayout
 from PyQt5.QtWidgets import QGraphicsView
 
-from aemdata import AEMData
+from aemoverdata import AEMOverData
 from aemoverview import AEMOverview
 
 
@@ -24,7 +24,7 @@ class Menu(QMainWindow):
 
 
 
-        self.data = AEMData()
+        self.data = AEMOverData()
         baseimg, trace, borehole = self.data.getOverview()
         self.overview = AEMOverview(baseimg, trace, borehole)
         layout.addWidget(self.overview.getView())

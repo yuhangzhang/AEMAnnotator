@@ -7,7 +7,7 @@ import psycopg2
 import numpy as np
 
 
-class AEMData():
+class AEMOverData():
     def __init__(self):
         # connect to local postgres db, enable postgis extension
         self.conn = psycopg2.connect(host="localhost", database="DataLake", user="yuhang")
