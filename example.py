@@ -30,12 +30,11 @@ class Menu(QMainWindow):
         layout.addWidget(self.overview.getView())
 
         self.sb = self.statusBar()
-        self.sb.showMessage(self.overview.coordinate)
         self.overview.mouseMoved.connect(self.refreshcoord)
 
 
     def refreshcoord(self):
-        self.sb.showMessage('Line '+str(self.overview.getLine()))
+        self.sb.showMessage(self.overview.getLine())
 
 
 if __name__ == '__main__':

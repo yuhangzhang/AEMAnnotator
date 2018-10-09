@@ -18,8 +18,7 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt
 
 from aemsectiondata import AEMSectionData
-
-
+from dialogdropdown import DialogDropDown
 from metric_learn import LMNN
 
 
@@ -29,8 +28,7 @@ class AEMSectionView(QGraphicsScene):
     def __init__(self, line):
         super(AEMSectionView, self).__init__()
         self.draw_switch = False
-        #self.dialog = Dialog()
-        #self.dialog = DialogDropDown()
+        self.dialog = DialogDropDown()
         self.pixmapunderground = QPixmap()
         self.pixmaptopdown = QPixmap()
         self.pixmapprediction = QPixmap()

@@ -20,64 +20,129 @@ class AEMSectionData():
         conn = psycopg2.connect(host="localhost", database="DataLake", user="yuhang")
         cur = conn.cursor()
 
-        cmd = """with tmp as
-                (
-                select 
-                    fiducial,
-                    easting_albers, 
-                    northing_albers, 
-                    conductivity, 
-                    x::float as thickness, 
-                    y as ordinal, 
-                    elevation::float as elevation
-                from 
-                    aem_albers as a, 
-                    unnest(string_to_array(regexp_replace(a.thickness,'[{}]','','g'),',')) with ordinality  as b(x,y) 
-                    where line = '""" + str(line) + """'
-                ),
-                tmp2 as
-                (
-                    select 
-                        fiducial,
-                        easting_albers, 
-                        northing_albers, 
-                        conductivity, 
-                        sum(thickness) over(partition by fiducial order by ordinal) as thickness, 
-                        ordinal, 
-                        elevation::float as elevation
-                    from 
-                        tmp
-                )
-                select 
-                    easting_albers, 
-                    northing_albers,
-                    elevation-thickness as z,
-                    (string_to_array(regexp_replace(conductivity,'[{}]','','g'),','))[ordinal] as conductivity1, 
-                    (string_to_array(regexp_replace(conductivity,'[{}]','','g'),','))[ordinal] as conductivity2, 
-                    (string_to_array(regexp_replace(conductivity,'[{}]','','g'),','))[ordinal] as conductivity3 
-                from  
-                    tmp2"""
-
-
-        cmd = "select easting_albers, northing_albers, elevation, conductivity, conductivity, conductivity\
-            from geoannotator.point_by_line where line='"+str(line)+"'"
-
+        cmd = "sql select * from aem.albers where line ="+str(line)
         cur.execute(cmd)
-        inputrecord = np.array(cur.fetchall())
+        line = np.array(cur.fetchall())
 
+        cmd = """
+            select l. *, r.elevation 
+            from geoannotator.dbf as l 
+            inner join aem.albers as 
+            on l.line::float = r.line 
+            and l.fiducial::float = r.fiducial
+            where l.line::bigint = """+str(line)+""" and r.line = """+str(line)
+        cur.execute(cmd)
+        lineattribute = np.array(cur.fetchall)
+
+        self.maxeast = max(line.dict()['easting_albers'])
+        self.maxnorth = max(line.dict()['northing_albers'])
+        self.mineast = min(line.dict()['easting_albers'])
+        self.minnorth = min(line.dict()['northing_albers'])
+
+        disrange = 500
+
+        cmd = """
+            select *
+            from aem.borehole 
+            where x_coor::float < """ +str(self.maxeast+disrange) + """ 
+            and x_coor::float > """ str(self.mineast-disrange) + """ 
+            and y_coor::float < """ str(maxnorth+disrange) + """
+            and y_coor::float > """ str(minnorth-disrange)
+        cur.execute(cmd)
+        borehole = np.array(cur.fetchall)
+
+        xy = list(zip(line.dict()['easting_albers'], line.dict()['northing_albers']))
+        xy_attribute = list(zip(lineattribute.dict()['easting_al'], lineattribute.dict()['northing_a']))
+        xy_attribute = [tuple(map(float, element)) for element in xy_attribute]
+        xy_borehole = list(zip(borehole.dict()['x_coor'], borehole.dict()['y_coor']))
+        xy_borehole = [tuple(map(float, element)) for element in xy_borehole]
+
+        cellsize = {'width': 20.0, 'height': 2.0}
+
+        pca = sd.PCA(n_components=1)
+        pca.fit(xy)
+        w = pca.transform(xy)
+        rect_w = ((w - min(w)) / cellsize['width']).round().astype(int)
+
+        w_attribute = pca.transform(xy_attribute)
+        rect_w_attribute = ((w_attribute - min(w)) / cellsize['width']).round().astype(int)
+
+        w_borehole = pca.transform(xy_borehole)
+        rect_w_borehole = ((w_borehole - min(w)) / cellsize['width']).round().astype(int)
+
+        h = [list(self.running_middle(element)) for element in line.dict()['thickness']]
+        h_attribute = np.array(lineattribute.dict()['elevation'])
+
+        rect_h = np.array(h)
+        for idx, ele in enumerate(line.dict()['elevation']):
+            rect_h[idx] = ele - rect_h[idx]
+
+        firstdepth = 0
+        rect_h_max = rect_h.max()
+        rect_h = rect_h_max - rect_h
+        rect_h_min = rect_h.min()
+        rect_h = ((rect_h - rect_h_min + firstdepth) / cellsize['height']).round().astype(int)
+
+        rect_h_attribute = rect_h_max - h_attribute
+        rect_h_attribute = ((rect_h_attribute - rect_h_min + firstdepth) / cellsize['height']).round().astype(int)
+
+        im = np.zeros([rect_h.max() + 1, rect_w.max() + 1, 4])  # conductivity, wii, grav, borehole
+        imcount = np.zeros([rect_h.max() + 1, rect_w.max() + 1, 4])  # conductivity, wii, grav, borehole
+
+        #print('assign conductivity')
+        conductivity = line.dict()['conductivity']
+        for idx, x in enumerate(rect_w):
+            for idy, y in enumerate(rect_h[idx]):
+                im[y, x, 0] = im[y, x, 0] * imcount[y, x, 0] / (imcount[y, x, 0] + 1) + conductivity[idx][idy] / (
+                            imcount[y, x, 0] + 1)
+                imcount[y, x, 0] += 1
+
+        #print('assign wii')
+        wii_max = 5.98
+        wii_min = 1
+        wii = lineattribute.dict()['wii_albers']
+        for idx, x in enumerate(rect_w_attribute):
+            topwii = float(wii[idx])
+            if topwii > 0 and x > 0 and x < im.shape[1]:
+                im[rect_h_attribute[idx], x, 1] = topwii
+                im[rect_h_attribute[idx] + round(
+                    (topwii - wii_min) / (wii_max - wii_min) * 100 / cellsize['height']), x, 1] = wii_min
+
+        #print('assign gravity')
+        grav = lineattribute.dict()['ir_grav_al']
+        for idx, x in enumerate(rect_w_attribute):
+            topgrav = float(grav[idx])
+            if topgrav > 0 and x > 0 and x < im.shape[1]:
+                im[rect_h_attribute[idx], x, 2] = topgrav
+                im[im.shape[0] - 1, x, 2] = topgrav
+
+        immin = [im[:, :, i][np.nonzero(im[:, :, i])].min() for i in range(im.shape[2] - 1)]
+        immax = [im[:, :, i][np.nonzero(im[:, :, i])].max() for i in range(im.shape[2] - 1)]
+
+        displayim = np.zeros([im.shape[0], im.shape[1], 4])  # conductivity, wii, grav, borehole
+
+        for i in range(3):
+            tim = im[:, :, i] > 0
+            displayim[:, :, i] = (im[:, :, i] - immin[i]) / (immax[i] - immin[i]) * 200 + 55
+            displayim[:, :, i] = displayim[:, :, i] * tim.astype(float)
+
+        print('interpolate')
+        displayim = np.stack((geointerpolation(displayim[:, :, 0].squeeze()), \
+                       geointerpolation(displayim[:, :, 1].squeeze()), \
+                       geointerpolation(displayim[:, :, 2].squeeze()), \
+                       geointerpolation(displayim[:, :, 3].squeeze())), axis=2)
+        ###############################################################################
         xyz = inputrecord[:, 0:3].astype(float)  # nx3 matrix
         pca = sd.PCA(n_components=1)
         pca.fit(xyz[:, 0:2])
         xy = pca.transform(xyz[:, 0:2])
 
         self.point = np.hstack([inputrecord, xy.reshape(-1, 1), inputrecord[:, 2].reshape(-1, 1)])
-        self.minh = self.point[:, -1].astype(float).min()
-        self.minw = self.point[:, -2].astype(float).min()
-        self.maxh = self.point[:, -1].astype(float).max()
-        self.maxw = self.point[:, -2].astype(float).max()
-
-
-
+        self.point = self.point.astype(float)
+        self.minh = self.point[:, -1].min()
+        self.minw = self.point[:, -2].min()
+        self.maxh = self.point[:, -1].max()
+        self.maxw = self.point[:, -2].max()
 
         self.feature = np.hstack([self.point[: ,3:6],  self.point[: ,2].reshape(-1, 1)])
 
@@ -86,12 +151,37 @@ class AEMSectionData():
 
         self.manuallabel = np.zeros([0 ,0])
 
+    @staticmethod
+    def running_middle(lst):
+        tot = 0
+        for item in lst:
+            tot += item
+            val = tot - item / 2
+            yield val
+
+    @staticmethod
+    def geointerpolation(img):
+        omg = np.zeros(img.shape)
+        for idx, col in enumerate(img.T):
+            nz = col.nonzero()[0]
+            nzv = col[nz]
+            if len(nz) > 0:
+                omg[:, idx] = np.interp(list(range(len(col))), nz, nzv, left=0, right=0)
+
+        for idx, row in enumerate(omg):
+            nz = row.nonzero()[0]
+            nzv = row[nz]
+            if len(nz) > 0:
+                row = np.interp(list(range(len(row))), nz, nzv, left=0, right=0)
+
+        return omg
+
     def getimagetopdown(self, width, height):
 
 
-        c = self.point[:, 0:2].astype(float)
+        c = self.point[:, 0:2]
         c = np.linalg.norm(c - c[0 ,:] ,axis=1)
-        a = self.point[: ,-2].astype(float ) -float(self.point[0 ,-2])
+        a = self.point[: ,-2] - self.point[0 ,-2]
         b = ( c** 2 - a**2 )**0.5
 
         maxa = a.max()
@@ -110,8 +200,8 @@ class AEMSectionData():
         img = np.zeros([height, width, 3], dtype=float)
         img.fill(200)
 
-        for i in range(len(a)):
-            img[b[i]:b[i ] +2 ,a[i]:a[i ] +2 ,: ] =[255 ,0 ,0]
+        for i,j in zip(a,b):
+            img[j:j+2, i:i+2, :] = [255, 0, 0]
 
         return img.astype(np.uint8)
 
@@ -129,28 +219,24 @@ class AEMSectionData():
 
         # update point on-image coordinates according to image width and height
         self.point[:, -1] = np.round(
-            (self.point[:, -1].astype(float) - self.minh) / (self.maxh - self.minh + 1) * (height - 1)
+            (self.point[:, -1] - self.minh) / (self.maxh - self.minh + 1) * (height - 1)
         )
         self.point[:, -2] = np.round(
-            (self.point[:, -2].astype(float) - self.minw) / (self.maxw - self.minw + 1) * (width - 1)
+            (self.point[:, -2] - self.minw) / (self.maxw - self.minw + 1) * (width - 1)
         )
 
         bucket_size = np.zeros([height, width, 3], dtype=np.int)
 
         # update image
-        for i in range(len(self.point)):
-            p = self.point[i]
-            if 1== 1:
-                inversedh = height - int(float(p[-1])) - 1
-                originalw = int(float(p[-2]))
-                self.bucket[originalw][inversedh].append(p)
-                self.featurebucket[originalw][inversedh].append(self.feature[i])
-                img[inversedh, originalw, 0] = img[inversedh, originalw, 0] + float(p[3])
-                img[inversedh, originalw, 1] = img[inversedh, originalw, 1] + float(p[4])
-                img[inversedh, originalw, 2] = img[inversedh, originalw, 2] + float(p[5])
-                bucket_size[inversedh, originalw, :] = bucket_size[inversedh, originalw, :] + 1
-                #print(inversedh, originalw, p[3])
-                #time.sleep(0.5)
+        for i,p in enumerate(self.point):
+            inversedh = height - round(p[-1]) - 1
+            originalw = round(p[-2])
+            self.bucket[originalw][inversedh].append(p)
+            self.featurebucket[originalw][inversedh].append(self.feature[i])
+            img[inversedh, originalw, 0] += p[3]
+            img[inversedh, originalw, 1] += p[4]
+            img[inversedh, originalw, 2] += p[5]
+            bucket_size[inversedh, originalw, :] += + 1
 
         # if a pixel corresponds to no point, make its size=1 for the next step
         for i in range(bucket_size.shape[0]):
@@ -191,9 +277,6 @@ class AEMSectionData():
 
         img_interpolate = cmap.to_rgba(img_interpolate[:, :, 0])[:, :, 0:3] * (img_interpolate > 0) * 255
 
-        cv2.imwrite("ttt.png", img_interpolate.astype(np.uint8))
-
-        #return(img.astype(np.uint8))
         return (img_interpolate.astype(np.uint8))
 
     # return the raw points corresponding to a pixel in the image as specified by w and h
@@ -242,8 +325,8 @@ class AEMSectionData():
         for i in range(len(self.point)):
             p = self.point[i]
             if 1 == 1:
-                inversedh = self.heightunderground - int(float(p[-1])) - 1
-                originalw = int(float(p[-2]))
+                inversedh = self.heightunderground - round(p[-1]) - 1
+                originalw = round(p[-2])
                 img[inversedh, originalw, 0] = self.prediction[i]
 
         img_interpolate = self.geointerpolation_label(img).round().astype(int)

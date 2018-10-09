@@ -35,7 +35,7 @@ class AEMOverData():
         self.cur.execute(" \
             select distinct \
                 (ST_WorldToRasterCoord(rast, x_coor::float, y_coor::float)).* \
-            from geoannotator.resample_reference, geoannotator.eggs_dbf \
+            from geoannotator.resample_reference, aem.borehole \
         ")
         borehole = np.array(self.cur.fetchall())
 
