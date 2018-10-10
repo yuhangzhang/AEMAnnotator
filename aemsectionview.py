@@ -20,7 +20,7 @@ from PyQt5.QtCore import Qt
 from aemsectiondata import AEMSectionData
 from dialogdropdown import DialogDropDown
 from metric_learn import LMNN
-
+from PIL import Image
 
 # from geolmnn import GeoLMNN
 
@@ -40,12 +40,17 @@ class AEMSectionView(QGraphicsScene):
     def loaddatabase(self, width, height):
         self.geodata = AEMSectionData(self.line)
         arr = self.geodata.getimagetopdown(width, int(height / 4))
-        qimg = QImage(arr, arr.shape[1], arr.shape[0], QImage.Format_RGB888)#.rgbSwapped()
+        qimg = QImage(arr, arr.shape[1], arr.shape[0], int(arr.nbytes/arr.shape[0]), QImage.Format_RGB888)#.rgbSwapped()
+        print(qimg.size())
         self.pixmaptopdown = QPixmap(qimg)
         self.pixmaptopdownhandle = self.addPixmap(self.pixmaptopdown)
 
-        arr = self.geodata.getimageunderground(width, height)
-        qimg = QImage(arr, arr.shape[1], arr.shape[0], QImage.Format_RGB888)#.rgbSwapped()
+        arr_conductivity = self.geodata.getimageunderground('conductivity')
+        arr_wii = self.geodata.getimageunderground('wii')
+        arr_gravity = self.geodata.getimageunderground('gravity')
+        arr = np.stack([arr_conductivity, arr_wii, arr_gravity], axis=2).astype(np.uint8)
+        qimg = QImage(arr, arr.shape[1], arr.shape[0], int(arr.nbytes/arr.shape[0]), QImage.Format_RGB888)#.rgbSwapped()
+
         self.pixmapunderground = QPixmap(qimg)
         self.pixmapundergroundhandle = self.addPixmap(self.pixmapunderground)
         self.pixmaptopdownhandle.moveBy(0, -self.pixmaptopdown.height()-20)
