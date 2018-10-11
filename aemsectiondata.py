@@ -87,6 +87,7 @@ class AEMSectionData():
         rect_w_borehole = ((w_borehole - min(w)) / cellsize['width']).round().astype(int)
 
         h = [list(self.running_middle(element)) for element in lineattribute['thickness']]
+        h_borehole =
 
 
         rect_h = np.array(h)
@@ -130,6 +131,9 @@ class AEMSectionData():
 
                 im[surface, x, 2] = topgrav
                 im[rect_h[idx][-1], x, 2] = topgrav
+
+        for idx, x in enumerate(rect_w_borehole):
+
 
 
         immin = [im[:, :, i][np.nonzero(im[:, :, i])].min() for i in range(im.shape[2] - 1)]

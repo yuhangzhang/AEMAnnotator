@@ -50,34 +50,28 @@ class AEMSectionView(QGraphicsScene):
         arr_conductivity = self.geodata.getimageunderground('conductivity')
         arr_wii = self.geodata.getimageunderground('wii')
         arr_gravity = self.geodata.getimageunderground('gravity')
-        arr = np.stack([arr_conductivity, arr_wii, arr_gravity], axis=2).astype(np.uint8)
-        arr.fill(255)
-        qimg = QImage(arr, arr.shape[1], arr.shape[0], int(arr.nbytes/arr.shape[0]), QImage.Format_RGB888)#.rgbSwapped()
+        self.arr = np.stack([arr_conductivity, arr_wii, arr_gravity], axis=2).astype(np.uint8)
+        self.arr.fill(0)
+        qimg = QImage(self.arr, self.arr.shape[1], self.arr.shape[0], int(self.arr.nbytes/self.arr.shape[0]), QImage.Format_RGB888)#.rgbSwapped()
 
         self.pixmapunderground = QPixmap(qimg)
         self.pixmapundergroundhandle = self.addPixmap(self.pixmapunderground)
 
     def fliplayer(self, layername):
+        colorcode = [i for i, x in enumerate(self.getlayernames()) if x == layername][0]
+        print(colorcode,'colorcode')
         if layername in self.visiblelayer:
-            self.removeItem(self.visiblelayer[layername])
+            self.arr[:,:,colorcode%3] = 0
             del self.visiblelayer[layername]
         else:
             print(layername,'layername')
             layer = self.geodata.getimageunderground(layername)
-            arr = np.zeros([layer.shape[0],layer.shape[1],4], dtype = np.uint8)
-            arr.fill(0)
-            colorcode = [i for i,x in enumerate(self.getlayernames()) if x==layername][0]
-            print(colorcode,arr.shape)
-            arr[:,:,colorcode%3] = layer
-            if len(self.visiblelayer)==0:
-                arr[:, :, 3] = 255
-            else:
-                arr[:, :, 3] = (0 + layer)/pow(2,len(self.visiblelayer))
+            self.arr[:,:,colorcode%3] = layer
+            self.visiblelayer[layername] = 1
 
-            #arr[:,:,3] = 255/pow(2,len(self.visiblelayer))+layer/len(self.visiblelayer)
-            arr[:,:,3] = arr[:,:,3]*(layer>0).astype(np.uint8)
-            qimg = QImage(arr, arr.shape[1], arr.shape[0], int(arr.nbytes / arr.shape[0]), QImage.Format_RGBA8888)
-            self.visiblelayer[layername] = self.addPixmap(QPixmap(qimg))
+        qimg = QImage(self.arr, self.arr.shape[1], self.arr.shape[0], int(self.arr.nbytes / self.arr.shape[0]), QImage.Format_RGB888)
+        self.removeItem(self.pixmapundergroundhandle)
+        self.pixmapundergroundhandle= self.addPixmap(QPixmap(qimg))
 
 
     def mousePressEvent(self, event):
