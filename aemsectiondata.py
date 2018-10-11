@@ -139,7 +139,7 @@ class AEMSectionData():
 
         for i in range(3):
             tim = im[:, :, i] > 0
-            displayim[:, :, i] = (im[:, :, i] - immin[i]) / (immax[i] - immin[i]) * 200 + 55
+            displayim[:, :, i] = (im[:, :, i] - immin[i]) / (immax[i] - immin[i]) * 155 + 100
             displayim[:, :, i] = displayim[:, :, i] * tim.astype(float)
 
         print('interpolate')
@@ -213,3 +213,6 @@ class AEMSectionData():
         if channel is not None:
             print("section size", self.displayim[channel].shape)
             return self.displayim[channel]
+
+    def getlayernames(self):
+        return list(self.displayim)

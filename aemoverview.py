@@ -23,6 +23,7 @@ from PIL.ImageDraw import  Draw
 from PIL.ImageQt import ImageQt
 
 from aemsectionview import AEMSectionView
+from aemsectionwindow import AEMSectionWindow
 
 class AEMOverview(QGraphicsScene):
     mouseMoved = pyqtSignal()
@@ -88,18 +89,7 @@ class AEMOverview(QGraphicsScene):
             pass
         else:
             self.annotator = AEMSectionView(self.line)
-            self.window = QMainWindow()
-            self.window.setWindowTitle("Line"+str(self.line))
-
-            central_widget = QWidget()
-            self.window.setCentralWidget(central_widget)
-            layout = QVBoxLayout(central_widget)
-
-            self.view = QGraphicsView(self.annotator)
-
-            layout.addWidget(self.view)
-
-            self.window.show()
+            self.window = AEMSectionWindow(self.line)
 
     def mouseMoveEvent(self, event):
         super(AEMOverview, self).mouseMoveEvent(event)
