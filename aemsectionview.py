@@ -52,26 +52,39 @@ class AEMSectionView(QGraphicsScene):
         arr_gravity = self.geodata.getimageunderground('gravity')
         self.arr = np.stack([arr_conductivity, arr_wii, arr_gravity], axis=2).astype(np.uint8)
         self.arr.fill(0)
+        self.arrborehole = self.geodata.getimageunderground('borehole')
         qimg = QImage(self.arr, self.arr.shape[1], self.arr.shape[0], int(self.arr.nbytes/self.arr.shape[0]), QImage.Format_RGB888)#.rgbSwapped()
 
         self.pixmapunderground = QPixmap(qimg)
         self.pixmapundergroundhandle = self.addPixmap(self.pixmapunderground)
 
+        #self.pixmapborehole = QPixmap(qimg)
+        self.pixmapboreholehandle = None
+
     def fliplayer(self, layername):
         colorcode = [i for i, x in enumerate(self.getlayernames()) if x == layername][0]
         print(colorcode,'colorcode')
-        if layername in self.visiblelayer:
-            self.arr[:,:,colorcode%3] = 0
-            del self.visiblelayer[layername]
-        else:
-            print(layername,'layername')
-            layer = self.geodata.getimageunderground(layername)
-            self.arr[:,:,colorcode%3] = layer
-            self.visiblelayer[layername] = 1
 
-        qimg = QImage(self.arr, self.arr.shape[1], self.arr.shape[0], int(self.arr.nbytes / self.arr.shape[0]), QImage.Format_RGB888)
-        self.removeItem(self.pixmapundergroundhandle)
-        self.pixmapundergroundhandle= self.addPixmap(QPixmap(qimg))
+        if layername == 'borehole':
+            if self.pixmapboreholehandle is None:
+                qimg = QImage(self.arrborehole, self.arrborehole.shape[1], self.arrborehole.shape[0], int(self.arrborehole.nbytes / self.arrborehole.shape[0]), QImage.Format_RGBA8888)
+                self.pixmapboreholehandle = self.addPixmap(QPixmap(qimg))
+            else:
+                self.removeItem(self.pixmapboreholehandle)
+                self.pixmapboreholehandle = None
+        else:
+            if layername in self.visiblelayer:
+                self.arr[:,:,colorcode%3] = 0
+                del self.visiblelayer[layername]
+            else:
+                print(layername,'layername')
+                layer = self.geodata.getimageunderground(layername)
+                self.arr[:,:,colorcode%3] = layer
+                self.visiblelayer[layername] = 1
+
+            qimg = QImage(self.arr, self.arr.shape[1], self.arr.shape[0], int(self.arr.nbytes / self.arr.shape[0]), QImage.Format_RGB888)
+            self.removeItem(self.pixmapundergroundhandle)
+            self.pixmapundergroundhandle= self.addPixmap(QPixmap(qimg))
 
 
     def mousePressEvent(self, event):

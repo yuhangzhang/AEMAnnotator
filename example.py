@@ -15,7 +15,7 @@ from aemoverview import AEMOverview
 class Menu(QMainWindow):
 
     def __init__(self):
-        super().__init__()
+        super(Menu, self).__init__()
         self.setWindowTitle("Overview")
 
         self.central_widget = QWidget()

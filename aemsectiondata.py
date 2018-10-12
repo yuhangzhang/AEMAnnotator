@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as colors
 import psycopg2
-import cv2
+
 from metric_learn import LMNN
 import time
 from sklearn.neighbors import KNeighborsClassifier
@@ -59,21 +59,38 @@ class AEMSectionData():
 
         disrange = 500 # borehole within this range will be considered
 
-        cmd = """
-            select x_coor, y_coor, dem_fill, value_type
-            from aem.borehole 
-            where x_coor::float < """ +str(self.maxeast+disrange) + """ 
-            and x_coor::float > """ +str(self.mineast-disrange) + """ 
-            and y_coor::float < """ +str(self.maxnorth+disrange) + """
-            and y_coor::float > """ +str(self.minnorth-disrange)
+
+
+        cmd= """
+            select x_coor, y_coor, dem_fill, round_a_de, 
+            case when lag is null then '0' else lag end  as upper,
+            value_type
+            from
+            (
+            select x_coor, y_coor, round_a_de, lag(round_a_de,1) over(partition by borehole_n order by round_a_de::float) as lag,
+                dem_fill, value_type
+                from aem.borehole
+                where x_coor::float < """ +str(self.maxeast+disrange) + """ 
+                and x_coor::float > """ +str(self.mineast-disrange) + """ 
+                and y_coor::float < """ +str(self.maxnorth+disrange) + """
+                and y_coor::float > """ +str(self.minnorth-disrange) + """
+            )tmp
+        """
+
+
         print(cmd)
         cur.execute(cmd)
-        borehole = np.array(cur.fetchall()).astype(float)
+        borehole = cur.fetchall()
+
+        column_names = ['x_coor', 'y_coor', 'dem_fill', 'round_a_de', 'upper', 'value_type']
+
+        borehole = {name:np.array(list(map(lambda x: x[idx], borehole))).astype(float) for idx, name in enumerate(column_names)}
+
 
         xy = np.array(list(zip(lineattribute['easting_albers'], lineattribute['northing_albers'])))
         # xy_borehole = list(zip(borehole['x_coor'], borehole['y_coor']))
         # xy_borehole = [tuple(map(float, element)) for element in xy_borehole]
-        xy_borehole = borehole[:,0:2]
+        xy_borehole =np.array(list(zip(borehole['x_coor'], borehole['y_coor'])))
 
         cellsize = {'width': 20.0, 'height': 2.0}
 
@@ -87,7 +104,7 @@ class AEMSectionData():
         rect_w_borehole = ((w_borehole - min(w)) / cellsize['width']).round().astype(int)
 
         h = [list(self.running_middle(element)) for element in lineattribute['thickness']]
-        h_borehole =
+
 
 
         rect_h = np.array(h)
@@ -132,16 +149,34 @@ class AEMSectionData():
                 im[surface, x, 2] = topgrav
                 im[rect_h[idx][-1], x, 2] = topgrav
 
+        boreholewidth = 5
         for idx, x in enumerate(rect_w_borehole):
+            x = x[0]
+            y_up = borehole['dem_fill'][idx]-borehole['upper'][idx]
+            y_up = rect_h_max - y_up
+            y_up = round((y_up - rect_h_min + firstdepth) / cellsize['height'])
+            y_up = int(y_up)
+            if y_up >=  im.shape[0]:
+                continue
+            y_down = borehole['dem_fill'][idx]-borehole['round_a_de'][idx]
+            y_down = rect_h_max - y_down
+            y_down = round((y_down - rect_h_min + firstdepth) / cellsize['height'])
+            y_down = int(y_down)
+            if y_down >= im.shape[0]:
+                y_down = im.shape[0]-1
+            #im[y_up, x - boreholewidth:x + boreholewidth, 3] = 0
+            im[y_up+1,x-boreholewidth:x+boreholewidth,3] = np.ceil(borehole['value_type'][idx])
+            im[y_down, x-boreholewidth:x+boreholewidth, 3] = np.ceil(borehole['value_type'][idx])
+            print(y_up,y_down,x)
 
 
 
-        immin = [im[:, :, i][np.nonzero(im[:, :, i])].min() for i in range(im.shape[2] - 1)]
-        immax = [im[:, :, i][np.nonzero(im[:, :, i])].max() for i in range(im.shape[2] - 1)]
+        immin = [im[:, :, i][np.nonzero(im[:, :, i])].min() for i in range(im.shape[2])]
+        immax = [im[:, :, i][np.nonzero(im[:, :, i])].max() for i in range(im.shape[2])]
 
         displayim = np.zeros([im.shape[0], im.shape[1], 4])  # conductivity, wii, grav, borehole
 
-        for i in range(3):
+        for i in range(im.shape[2]):
             tim = im[:, :, i] > 0
             displayim[:, :, i] = (im[:, :, i] - immin[i]) / (immax[i] - immin[i]) * 155 + 100
             displayim[:, :, i] = displayim[:, :, i] * tim.astype(float)
@@ -152,11 +187,17 @@ class AEMSectionData():
         self.displayim['conductivity'] =self.geointerpolation(displayim[:, :, 0].squeeze().astype(np.uint8))
         self.displayim['wii'] = self.geointerpolation(displayim[:, :, 1].squeeze().astype(np.uint8))
         self.displayim['gravity'] = self.geointerpolation(displayim[:, :, 2].squeeze().astype(np.uint8))
-        self.displayim['borehole'] = self.geointerpolation(displayim[:, :, 3].squeeze().astype(np.uint8))
+        self.displayim['borehole'] = np.zeros([im.shape[0], im.shape[1], 4])
+        self.displayim['borehole'][:, :, 0] = self.geointerpolation(displayim[:, :, 3].squeeze())
+        self.displayim['borehole'][:, :, 1] = self.displayim['borehole'][:, :, 0]
+        self.displayim['borehole'][:, :, 3] = (self.displayim['borehole'][:, :, 1]>0)*255
+        self.displayim['borehole'] = self.displayim['borehole'].astype(np.uint8)
+
 
         self.channellist = ['conductivity', 'wii', 'gravity', 'borehole']
 
         self.point = np.hstack([xy.reshape(-1,2), w.reshape(-1,1)])
+
 
 
     @staticmethod
