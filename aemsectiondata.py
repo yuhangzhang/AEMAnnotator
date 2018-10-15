@@ -15,12 +15,15 @@ import matplotlib.pyplot as plt
 
 from scipy.interpolate import interp1d
 
+
+from aemlinestandardisation import AEMLineStandardisation
+
 class AEMSectionData():
 
     def __init__(self, line):
 
-        conn = psycopg2.connect(host="localhost", database="DataLake", user="yuhang")
-        cur = conn.cursor()
+        self.conn = psycopg2.connect(host="localhost", database="DataLake", user="yuhang")
+        cur = self.conn.cursor()
 
 
         cmd = """
@@ -37,6 +40,7 @@ class AEMSectionData():
             on l.line::float = r.line 
             and l.fiducial::float = r.fiducial
             where l.line::bigint = """+str(line)+""" and r.line = """+str(line)+ """ 
+            order by l.fiducial::float
             """
         print(cmd)
         cur.execute(cmd)
@@ -92,20 +96,17 @@ class AEMSectionData():
         # xy_borehole = [tuple(map(float, element)) for element in xy_borehole]
         xy_borehole =np.array(list(zip(borehole['x_coor'], borehole['y_coor'])))
 
-        cellsize = {'width': 20.0, 'height': 2.0}
+        self.cellsize = {'width': 20.0, 'height': 2.0}
 
-        pca = sd.PCA(n_components=1)
-        pca.fit(xy)
-        w = pca.transform(xy)
-        rect_w = ((w - min(w)) / cellsize['width']).round().astype(int)
+        self.transform = AEMLineStandardisation()
+        self.transform.fit(xy)
+        self.w = self.transform.transform(xy)/self.cellsize['width']
+        rect_w = self.w[:,0].round().astype(int)
 
-        print(xy_borehole.shape)
-        w_borehole = pca.transform(xy_borehole)
-        rect_w_borehole = ((w_borehole - min(w)) / cellsize['width']).round().astype(int)
+        self.w_borehole = self.transform.transform(xy_borehole)/self.cellsize['width']
+        rect_w_borehole = self.w_borehole[:,0].round().astype(int)
 
         h = [list(self.running_middle(element)) for element in lineattribute['thickness']]
-
-
 
         rect_h = np.array(h)
         for idx, ele in enumerate(lineattribute['elevation']):
@@ -116,7 +117,7 @@ class AEMSectionData():
         rect_h_max = rect_h.max()
         rect_h = rect_h_max - rect_h
         rect_h_min = rect_h.min()
-        rect_h = ((rect_h - rect_h_min + firstdepth) / cellsize['height']).round().astype(int)
+        rect_h = ((rect_h - rect_h_min + firstdepth) / self.cellsize['height']).round().astype(int)
 
         self.width = rect_w.max() + 1
         self.height = rect_h.max() + 1
@@ -141,7 +142,7 @@ class AEMSectionData():
             topgrav = float(grav[idx])
             surface = rect_h[idx][0]
             if topwii > 0 and x > 0 and x < im.shape[1]:
-                height = surface + round((topwii - wii_min) / (wii_max - wii_min) * 100 / cellsize['height'])
+                height = surface + round((topwii - wii_min) / (wii_max - wii_min) * 100 / self.cellsize['height'])
                 if height<im.shape[0]:
                     im[surface, x, 1] = topwii
                     im[height, x, 1] = wii_min
@@ -151,16 +152,15 @@ class AEMSectionData():
 
         boreholewidth = 5
         for idx, x in enumerate(rect_w_borehole):
-            x = x[0]
             y_up = borehole['dem_fill'][idx]-borehole['upper'][idx]
             y_up = rect_h_max - y_up
-            y_up = round((y_up - rect_h_min + firstdepth) / cellsize['height'])
+            y_up = round((y_up - rect_h_min + firstdepth) / self.cellsize['height'])
             y_up = int(y_up)
             if y_up >=  im.shape[0]:
                 continue
             y_down = borehole['dem_fill'][idx]-borehole['round_a_de'][idx]
             y_down = rect_h_max - y_down
-            y_down = round((y_down - rect_h_min + firstdepth) / cellsize['height'])
+            y_down = round((y_down - rect_h_min + firstdepth) / self.cellsize['height'])
             y_down = int(y_down)
             if y_down >= im.shape[0]:
                 y_down = im.shape[0]-1
@@ -196,7 +196,7 @@ class AEMSectionData():
 
         self.channellist = ['conductivity', 'wii', 'gravity', 'borehole']
 
-        self.point = np.hstack([xy.reshape(-1,2), w.reshape(-1,1)])
+        self.point = np.hstack([xy.reshape(-1,2), self.w[:,0].reshape(-1,1)])
 
 
 
@@ -225,29 +225,92 @@ class AEMSectionData():
         return omg
 
 
+    def getaffinetransform(self):
+        translation = np.zeros([3,3])
+        translation[0, 0] = 1
+        translation[0,2] = -self.point[0,2]
+        translation[1,2] = 0
+        translation[1, 1] = 1
+        translation[2,2] = 1
 
-    def getimagetopdown(self, width, height):
-        c = np.linalg.norm(self.point[:,0:2] - self.point[0 ,0:2] ,axis=1)
-        a = self.point[: ,2] - self.point[0 ,2]
-        b = ( c** 2 - a**2 )**0.5
+        translation2 = np.zeros([3,3])
+        translation2[0,2] = self.point[0,0]
+        translation2[0, 0] = 1
+        translation2[1,2] = self.point[0,1]
+        translation2[1, 1] = 1
+        translation2[2,2] = 1
 
-        maxa = a.max()
-        mina = a.min()
-        maxb = b.max()
-        minb = b.min()
+        cur = self.conn.cursor()
+        cur.execute("""
+        select (ST_WorldToRasterCoord(rast, 
+            """+str(self.point[0,0])+""", """+str(self.point[0,1])+"""
+            )).*
+        from geoannotator.resample_reference
+        """)
+        [x0, y0] = cur.fetchall()[0]
+        cur.execute("""
+        select (ST_WorldToRasterCoord(rast, 
+            """+str(self.point[-1,0])+""", """+str(self.point[-1,1])+"""
+            )).*
+        from geoannotator.resample_reference
+        """)
+        [x1, y1] = cur.fetchall()[0]
+        scaling = np.zeros([3,3])
+        scaling[0,0] = (x1-x0)/(self.point[-1,0]-self.point[0,0])
+        scaling[1,1] = (y1-y0)/(self.point[-1,1]-self.point[0,1])
+        scaling[2,2] = 1
 
-        a = ( a - mina ) / (maxa -mina ) *(self.width -1)
-        b = ( b - minb ) / (maxa -mina ) *(self.width -1)
-        a = a.astype(int)
-        b = b.astype(int)
 
-        height = b.max()+1
-        print(self.width,height,'here')
+        translation3 = np.zeros([3,3])
+        translation3[0,2] = x0
+        translation3[0, 0] = 1
+        translation3[1,2] = y0
+        translation3[1, 1] = 1
+        translation3[2,2] = 1
 
-        img = np.zeros([height, self.width, 3], dtype=float)
-        img.fill(200)
+        print(self.point.shape)
+        c = np.linalg.norm(self.point[-1,0:2] - self.point[0 ,0:2] )
+        x1 = self.point[-1 ,2] - self.point[0 ,2]
+        y1 = ( c** 2 - x1**2 )**0.5
+        x1 = x1 / (x1 ** 2 + y1 ** 2) ** 0.5
+        y1 = y1 / (x1 ** 2 + y1 ** 2) ** 0.5
 
-        for i,j in zip(a,b):
+        x0 = self.point[-1,0]-self.point[0,0]
+        y0 = self.point[-1,1]-self.point[0,1]
+        x0 = x0 / (x0 ** 2 + y0 ** 2) ** 0.5
+        y0 = y0 / (x0 ** 2 + y0 ** 2) ** 0.5
+
+
+        cos = x0*x1+y0*y1
+        sin = x1*y0-x0*y1
+        rotation = np.zeros([3,3])
+        rotation[0,0] = cos
+        rotation[0,1] = -sin
+        rotation[1,0] = sin
+        rotation[1,1] = cos
+        rotation[2,2] = 1
+
+        print(cos, sin, "cos and sin")
+
+        #return np.matmul(translation2, np.matmul(rotation, translation))
+        return np.matmul(translation3, np.matmul(scaling, np.matmul(rotation, translation)))
+        #return np.matmul(translation3, np.matmul(scaling, np.matmul(translation2, np.matmul(rotation, translation))))
+
+        #return np.matmul(translation3, np.matmul(scaling, np.matmul(rotation, translation)))
+
+
+    def getimagetopdown(self):
+        maxx = int(self.w[:,0].max())
+        miny = int(self.w[:,1].min())
+        maxy = int(self.w[:,1].max())
+
+        img = self.transform.cropimage(0, miny, maxx+1, maxy-miny+1, self.cellsize['width'])
+
+        print(img[0:10,0:10,:],'img')
+
+        for i,j in self.w:
+            i = int(i)
+            j = int(j)-miny
             img[j:j+2, i:i+2, :] = [255, 0, 0]
 
         print("td size", img.shape)

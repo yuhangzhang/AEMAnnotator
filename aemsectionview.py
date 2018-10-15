@@ -40,7 +40,9 @@ class AEMSectionView(QGraphicsScene):
 
     def loaddatabase(self, width, height):
         self.geodata = AEMSectionData(self.line)
-        arr = self.geodata.getimagetopdown(width, int(height / 4))
+        arr = self.geodata.getimagetopdown()
+        arr = np.flip(arr, 0).astype(np.uint8)
+        print(arr.shape,'shape')
         qimg = QImage(arr, arr.shape[1], arr.shape[0], int(arr.nbytes/arr.shape[0]), QImage.Format_RGB888)#.rgbSwapped()
         print(qimg.size())
         self.pixmaptopdown = QPixmap(qimg)
