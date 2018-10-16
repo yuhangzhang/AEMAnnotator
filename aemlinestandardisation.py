@@ -10,6 +10,7 @@ class AEMLineStandardisation():
         pass
 
     def fit(self, inputpoint):
+        print(inputpoint[0],"input")
 
         translation = np.eye(3)
         translation[0:2,2] = -inputpoint[0,:]
@@ -41,6 +42,9 @@ class AEMLineStandardisation():
         self.T = np.matmul(rotation,translation)
         self.reverseT = np.matmul(reversetranslation, rotation.T)
 
+        print(np.matmul(self.T, np.append(inputpoint[0,:],1)),"heer")
+        print(np.matmul(self.T, np.append(inputpoint[-1,:],1)),"heer")
+
     def transform(self, point):
         point = np.vstack([point.T, np.ones([1,point.shape[0]])])
         return np.matmul(self.T, point).T[:,0:2]
@@ -49,50 +53,76 @@ class AEMLineStandardisation():
         #print(x,y,np.matmul(self.reverseT, [x,y,1.0])[0:2],'inverse' )
         return np.matmul(self.reverseT, [x,y,1.0])[0:2]
 
-    def cropimage(self, leftx, topy, width, height, cellsize):
+    def cropimage(self, minx, miny, maxx, maxy, cellsize):
+        width = int((maxx-minx+1.0)/cellsize)
+        height = int((maxy-miny+1.0)/cellsize)
+
         conn = psycopg2.connect(host="localhost", database="DataLake", user="yuhang")
         cur = conn.cursor()
         cur.execute("SET postgis.gdal_enabled_drivers = 'ENABLE_ALL'")
+
+        x1, y1 = self.inversetransform(minx,miny)
+        x2, y2 = self.inversetransform(maxx,maxy)
+        x3, y3 = self.inversetransform(minx,maxy)
+        x4, y4 = self.inversetransform(maxx,miny)
+
+        tmp = [x1,x2,x3,x4]
+        xmin = min(tmp)
+        xmax = max(tmp)
+        tmp = [y1,y2,y3,y4]
+        ymin = min(tmp)
+        ymax = max(tmp)
 
         cmd="""select 
                 st_upperleftx(rast) as leftx, 
                 st_upperlefty(rast) as topy,                
                 ST_PixelWidth(rast) as pixelwidth,
-                ST_PixelHeight(rast) as pixelheight
-                from geoannotator.baseimg
+                ST_PixelHeight(rast) as pixelheight,
+                st_aspng(rast) as png
+                from 
+                (
+                    select st_union(rast) as rast
+                    from geoannotator.satellite_tif
+                    where   st_upperleftx(rast)<"""+str(xmax)+"""+1000
+                    and     st_upperlefty(rast)<"""+str(ymax)+"""+1000
+                    and     st_upperleftx(rast)+st_pixelwidth(rast)*st_width(rast)>"""+str(xmin)+"""-1000
+                    and     st_upperlefty(rast)+st_pixelheight(rast)*st_height(rast)>"""+str(ymin)+"""-1000
+                ) as tmp
         """
+        print(cmd)
         cur.execute(cmd)
         info = cur.fetchall()
 
-        cmd = """select st_aspng(rast) from geoannotator.baseimg"""
-        cur.execute(cmd)
-        baseimg = cur.fetchall()
-        baseimg = BytesIO(baseimg[0][0])
+
+        baseimg = info[0][4]
+        baseimg = BytesIO(baseimg)
         baseimg = Image.open(baseimg)
+        baseimg.show()
         print(baseimg.size, "baseimg")
         baseimg = baseimg.load()
 
-        cmd = """select ST_RasterToWorldCoordX(rast, """+ str(leftx) +"""), ST_RasterToWorldCoordY(rast, """+ str(topy) +""") from  geoannotator.baseimg"""
-        cur.execute(cmd)
-        corner = cur.fetchall()
-
-
         crop = np.zeros([height, width, 3], dtype=np.uint8)
 
+        x, y = self.inversetransform(0,0)
 
         for i in range(width):
+            #print(i,width)
             for j in range(height):
-                x,y = self.inversetransform(i*cellsize,j*cellsize)
-                #print(x,y,"inverse")
+                i2 = i*cellsize+minx
+                j2 = j*cellsize+miny
+                x,y = self.inversetransform(i2,j2)
+                #print(x,y,"raw")
+                # print(info[0:4],"info")
                 x = (x-info[0][0])/info[0][2]
                 y = (y-info[0][1])/info[0][3]
-                #print(x,width,y,height)
-                x = round(x)
-                y = round(y)
-                #if x>=0 and x<width and y>=0 and y<height:
-                #print(baseimg[x,y])
-                #print(type(baseimg[x,y][0]),"type")
-                #print(i,j,x,y)
+
+                x = round(np.fabs(x))
+                y = round(np.fabs(y))
+                if x>width or x<0:
+                    continue
+                if y>height or y<0:
+                    continue
+
                 crop[j,i,:] = np.array(baseimg[x,y]).astype(np.uint8)
 
 

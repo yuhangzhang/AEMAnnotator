@@ -100,8 +100,8 @@ class AEMSectionData():
 
         self.transform = AEMLineStandardisation()
         self.transform.fit(xy)
-        self.w = self.transform.transform(xy)/self.cellsize['width']
-        rect_w = self.w[:,0].round().astype(int)
+        self.w = self.transform.transform(xy)
+        rect_w = (self.w[:,0]/self.cellsize['width']).round().astype(int)
 
         self.w_borehole = self.transform.transform(xy_borehole)/self.cellsize['width']
         rect_w_borehole = self.w_borehole[:,0].round().astype(int)
@@ -180,6 +180,8 @@ class AEMSectionData():
             tim = im[:, :, i] > 0
             displayim[:, :, i] = (im[:, :, i] - immin[i]) / (immax[i] - immin[i]) * 155 + 100
             displayim[:, :, i] = displayim[:, :, i] * tim.astype(float)
+
+        np.save('sectiondata', im)
 
         print('interpolate')
         self.displayim = {}
@@ -303,8 +305,9 @@ class AEMSectionData():
         maxx = int(self.w[:,0].max())
         miny = int(self.w[:,1].min())
         maxy = int(self.w[:,1].max())
-
+        print(maxx,miny,maxy,'boundary')
         img = self.transform.cropimage(0, miny, maxx+1, maxy-miny+1, self.cellsize['width'])
+        #img = img.transpose(Image.FLIP_TOP_BOTTOM)
 
         print(img[0:10,0:10,:],'img')
 
